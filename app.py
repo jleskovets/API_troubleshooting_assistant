@@ -104,8 +104,10 @@ Rules:
     return response.output_text
 
 if st.button("Analyze issue"):
+
     if not customer_message.strip():
         st.warning("Please paste a customer message first.")
+
     else:
         matches = simple_search(customer_message, cases)
 
@@ -113,16 +115,93 @@ if st.button("Analyze issue"):
 
         if not matches:
             st.info("No similar cases found.")
+
         else:
+            # Показываем найденные кейсы
             for score, case in matches:
+
                 with st.container(border=True):
-                    st.markdown(f"### Case #{case['id']} — {case['api_area']}")
-                    st.write(f"**Endpoint:** {case['endpoint']}")
-                    st.write(f"**Error code:** {case['error_code']}")
-                    st.write(f"**Problem:** {case['problem']}")
-                    st.write(f"**Possible root cause:** {case['root_cause']}")
-                    st.write(f"**Suggested solution:** {case['solution']}")
-                    st.caption(f"Match score: {score}")
+
+                    st.markdown(
+                        f"### Case #{case['id']} — {case['api_area']}"
+                    )
+
+                    st.write(
+                        f"**Endpoint:** {case['endpoint']}"
+                    )
+
+                    st.write(
+                        f"**Error code:** {case['error_code']}"
+                    )
+
+                    st.write(
+                        f"**Problem:** {case['problem']}"
+                    )
+
+                    st.write(
+                        f"**Possible root cause:** {case['root_cause']}"
+                    )
+
+                    st.write(
+                        f"**Suggested solution:** {case['solution']}"
+                    )
+
+                    st.caption(
+                        f"Match score: {score}"
+                    )
+
+            # AI БЛОК — только если есть matches
+
+            st.subheader("AI-generated response")
+
+            with st.spinner("Generating customer reply..."):
+                reply = generate_customer_reply(
+                    customer_message,
+                    matches
+                )
+
+            try:
+                reply_data = json.loads(reply)
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    with st.container(border=True):
+                        st.markdown("### Issue summary")
+                        st.write(reply_data["issue_summary"])
+
+                with col2:
+                    with st.container(border=True):
+                        st.markdown("### Likely root cause")
+                        st.write(reply_data["root_cause"])
+
+                with st.container(border=True):
+                    st.markdown("### Recommended next steps")
+
+                    for step in reply_data["next_steps"]:
+                        st.write(f"- {step}")
+
+                with st.container(border=True):
+                    st.markdown("### Email draft")
+
+                    st.text_area(
+                        "Generated email",
+                        value=reply_data["email_draft"],
+                        height=250,
+                        label_visibility="collapsed"
+                    )
+
+            except json.JSONDecodeError:
+
+                st.warning(
+                    "AI response could not be parsed as structured JSON."
+                )
+
+                st.text_area(
+                    "Raw AI response",
+                    value=reply,
+                    height=350
+                )
 
 st.subheader("AI-generated response")
 
