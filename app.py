@@ -94,7 +94,7 @@ Rules:
 """
 
     response = client.responses.create(
-        model="gpt-5.1-mini",
+        model="gpt-4.1-mini",
         input=prompt
     )
 
