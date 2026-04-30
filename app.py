@@ -1,4 +1,5 @@
 import os
+import json
 
 import pandas as pd
 import streamlit as st
@@ -79,11 +80,13 @@ Customer message:
 Similar troubleshooting cases:
 {cases_text}
 
-Generate:
-1. Short issue summary
-2. Likely root cause
-3. Recommended next steps
-4. A professional customer email draft
+Return ONLY valid JSON with this structure:
+{{
+  "issue_summary": "...",
+  "root_cause": "...",
+  "next_steps": ["...", "...", "..."],
+  "email_draft": "..."
+}}
 
 Rules:
 - Write in English
@@ -121,13 +124,44 @@ if st.button("Analyze issue"):
                     st.write(f"**Suggested solution:** {case['solution']}")
                     st.caption(f"Match score: {score}")
 
-            st.subheader("AI-generated response")
+st.subheader("AI-generated response")
 
-            with st.spinner("Generating customer reply..."):
-                reply = generate_customer_reply(customer_message, matches)
+with st.spinner("Generating customer reply..."):
+    reply = generate_customer_reply(customer_message, matches)
 
-            st.text_area(
-                "Draft reply",
-                value=reply,
-                height=350
-            )
+try:
+    reply_data = json.loads(reply)
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        with st.container(border=True):
+            st.markdown("### Issue summary")
+            st.write(reply_data["issue_summary"])
+
+    with col2:
+        with st.container(border=True):
+            st.markdown("### Likely root cause")
+            st.write(reply_data["root_cause"])
+
+    with st.container(border=True):
+        st.markdown("### Recommended next steps")
+        for step in reply_data["next_steps"]:
+            st.write(f"- {step}")
+
+    with st.container(border=True):
+        st.markdown("### Email draft")
+        st.text_area(
+            "Generated email",
+            value=reply_data["email_draft"],
+            height=250,
+            label_visibility="collapsed"
+        )
+
+except json.JSONDecodeError:
+    st.warning("AI response could not be parsed as structured JSON.")
+    st.text_area(
+        "Raw AI response",
+        value=reply,
+        height=350
+    )
