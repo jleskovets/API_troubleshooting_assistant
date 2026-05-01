@@ -6,9 +6,19 @@ import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
 
+
+# -----------------------------
+# Setup
+# -----------------------------
+
 load_dotenv()
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+api_key = os.getenv("OPENAI_API_KEY")
+
+if not api_key:
+    st.error("OPENAI_API_KEY not found. Check your .env file.")
+
+client = OpenAI(api_key=api_key)
 
 st.set_page_config(
     page_title="API Troubleshooting Assistant",
@@ -19,11 +29,25 @@ st.set_page_config(
 st.title("🛠️ API Troubleshooting Assistant")
 st.write("Paste a customer API issue and get similar cases plus a draft reply.")
 
+
+# -----------------------------
+# Load data
+# -----------------------------
+
 @st.cache_data
 def load_cases():
-    return pd.read_csv("data/troubleshooting_cases_english.csv", sep=";")
+    return pd.read_csv(
+        "data/troubleshooting_cases_english.csv",
+        sep=";"
+    )
+
 
 cases = load_cases()
+
+
+# -----------------------------
+# UI input
+# -----------------------------
 
 customer_message = st.text_area(
     "Customer message",
@@ -31,12 +55,18 @@ customer_message = st.text_area(
     placeholder="Example: We receive 401 Invalid credentials when calling POST /auth/token..."
 )
 
+
+# -----------------------------
+# Search logic
+# -----------------------------
+
 def simple_search(message, df):
     message = message.lower()
     results = []
 
     for _, row in df.iterrows():
         score = 0
+
         searchable_text = " ".join([
             str(row["api_area"]),
             str(row["endpoint"]),
@@ -54,6 +84,11 @@ def simple_search(message, df):
             results.append((score, row))
 
     return sorted(results, key=lambda x: x[0], reverse=True)[:3]
+
+
+# -----------------------------
+# AI logic
+# -----------------------------
 
 def generate_customer_reply(message, matches):
     cases_text = ""
@@ -80,7 +115,8 @@ Customer message:
 Similar troubleshooting cases:
 {cases_text}
 
-Return ONLY valid JSON with this structure:
+Return ONLY raw valid JSON. Do not use markdown code fences.
+Use this exact structure:
 {{
   "issue_summary": "...",
   "root_cause": "...",
@@ -103,6 +139,26 @@ Rules:
 
     return response.output_text
 
+
+def parse_ai_json(reply):
+    reply = reply.strip()
+
+    if reply.startswith("```json"):
+        reply = reply.replace("```json", "", 1).strip()
+
+    if reply.startswith("```"):
+        reply = reply.replace("```", "", 1).strip()
+
+    if reply.endswith("```"):
+        reply = reply[:-3].strip()
+
+    return json.loads(reply)
+
+
+# -----------------------------
+# Main button logic
+# -----------------------------
+
 if st.button("Analyze issue"):
 
     if not customer_message.strip():
@@ -117,11 +173,8 @@ if st.button("Analyze issue"):
             st.info("No similar cases found.")
 
         else:
-            # Показываем найденные кейсы
             for score, case in matches:
-
                 with st.container(border=True):
-
                     st.markdown(
                         f"### Case #{case['id']} — {case['api_area']}"
                     )
@@ -150,8 +203,6 @@ if st.button("Analyze issue"):
                         f"Match score: {score}"
                     )
 
-            # AI БЛОК — только если есть matches
-
             st.subheader("AI-generated response")
 
             with st.spinner("Generating customer reply..."):
@@ -161,7 +212,7 @@ if st.button("Analyze issue"):
                 )
 
             try:
-                reply_data = json.loads(reply)
+                reply_data = parse_ai_json(reply)
 
                 col1, col2 = st.columns(2)
 
@@ -192,7 +243,6 @@ if st.button("Analyze issue"):
                     )
 
             except json.JSONDecodeError:
-
                 st.warning(
                     "AI response could not be parsed as structured JSON."
                 )
