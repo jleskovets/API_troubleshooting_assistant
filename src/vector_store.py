@@ -18,11 +18,12 @@ def get_embedding(text):
         model="text-embedding-3-small",
         input=text
     )
-
     return response.data[0].embedding
 
 
 def case_to_text(row):
+    tags = row["tags"] if "tags" in row and pd.notna(row["tags"]) else ""
+
     return f"""
 API Area: {row['api_area']}
 Endpoint: {row['endpoint']}
@@ -30,6 +31,7 @@ Error Code: {row['error_code']}
 Problem: {row['problem']}
 Root Cause: {row['root_cause']}
 Solution: {row['solution']}
+Tags: {tags}
 """
 
 
@@ -53,9 +55,7 @@ def build_vector_store(csv_path="data/troubleshooting_cases_english.csv"):
     for _, row in df.iterrows():
         text = case_to_text(row)
 
-        documents.append(text)
-        embeddings.append(get_embedding(text))
-        metadatas.append({
+        metadata = {
             "id": int(row["id"]),
             "api_area": str(row["api_area"]),
             "endpoint": str(row["endpoint"]),
@@ -63,7 +63,13 @@ def build_vector_store(csv_path="data/troubleshooting_cases_english.csv"):
             "problem": str(row["problem"]),
             "root_cause": str(row["root_cause"]),
             "solution": str(row["solution"]),
-        })
+            "tags": str(row["tags"]) if "tags" in row and pd.notna(row["tags"]) else "",
+            "logs": str(row["logs"]) if "logs" in row and pd.notna(row["logs"]) else "",
+        }
+
+        documents.append(text)
+        embeddings.append(get_embedding(text))
+        metadatas.append(metadata)
         ids.append(str(row["id"]))
 
     collection.add(
@@ -78,7 +84,6 @@ def build_vector_store(csv_path="data/troubleshooting_cases_english.csv"):
 
 def semantic_search(query, top_k=1):
     chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
-
     collection = chroma_client.get_collection(name=COLLECTION_NAME)
 
     query_embedding = get_embedding(query)
@@ -94,10 +99,10 @@ def semantic_search(query, top_k=1):
         metadata = results["metadatas"][0][i]
         distance = results["distances"][0][i]
 
-        score = round(1 - distance, 4)
+        score = max(0, min(1, 1 - distance))
 
         matches.append({
-            "score": score,
+            "score": round(score, 4),
             "case": metadata
         })
 
