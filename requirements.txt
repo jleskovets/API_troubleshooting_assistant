@@ -5,3 +5,4 @@ python-dotenv
 chromadb
 numpy
 tqdm
+protobuf==3.20.3
