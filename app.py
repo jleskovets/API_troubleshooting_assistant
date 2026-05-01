@@ -18,6 +18,7 @@ api_key = os.getenv("OPENAI_API_KEY")
 
 if not api_key:
     st.error("OPENAI_API_KEY not found. Check your .env file.")
+    st.stop()
 
 client = OpenAI(api_key=api_key)
 
@@ -28,7 +29,9 @@ st.set_page_config(
 )
 
 st.title("🛠️ API Troubleshooting Assistant")
-st.write("Paste a customer API issue and get the most relevant troubleshooting case plus a draft reply.")
+st.write(
+    "Paste a customer API issue and get the most relevant troubleshooting case plus a draft reply."
+)
 
 
 # -----------------------------
@@ -55,6 +58,7 @@ customer_message = st.text_area(
     height=200,
     placeholder="Example: We receive 401 Invalid credentials when calling POST /auth/token..."
 )
+
 with st.sidebar:
     st.header("Knowledge base")
 
@@ -64,10 +68,12 @@ with st.sidebar:
 
         st.success(f"Semantic index rebuilt. Cases indexed: {count}")
 
+
 # -----------------------------
-# Search logic
+# Fallback keyword search
 # -----------------------------
 
+# This is kept as a fallback in case the semantic index has not been built yet.
 def simple_search(message, df):
     message = message.lower()
     results = []
@@ -85,14 +91,12 @@ def simple_search(message, df):
             str(row["solution"]),
         ]).lower()
 
-        # High-weight matches
         if endpoint and endpoint in message:
             score += 5
 
         if error_code and error_code in message:
             score += 5
 
-        # Medium-weight matches
         for word in message.split():
             clean_word = word.strip(".,!?;:()[]{}\"'").lower()
 
@@ -106,15 +110,33 @@ def simple_search(message, df):
                 score += 1
 
         if score > 0:
-            results.append((score, row))
+            results.append((score, row.to_dict()))
 
-    results = sorted(
-        results,
-        key=lambda x: x[0],
-        reverse=True
-    )
+    return sorted(results, key=lambda x: x[0], reverse=True)[:1]
 
-    return results[:1]
+
+def find_best_case(message):
+    """
+    First tries semantic search.
+    If the semantic index is missing, falls back to keyword search.
+    Returns a list with one tuple: [(score, case_dict)].
+    """
+    try:
+        semantic_matches = semantic_search(message, top_k=1)
+
+        if semantic_matches:
+            match = semantic_matches[0]
+            return [(match["score"], match["case"])]
+
+    except Exception as error:
+        st.warning(
+            "Semantic index is not ready yet. "
+            "Click 'Rebuild semantic index' in the sidebar. "
+            "For now, keyword search will be used."
+        )
+        st.caption(f"Semantic search details: {error}")
+
+    return simple_search(message, cases)
 
 
 # -----------------------------
@@ -196,15 +218,8 @@ if st.button("Analyze issue"):
         st.warning("Please paste a customer message first.")
 
     else:
-        semantic_matches = semantic_search(customer_message, top_k=1)
+        matches = find_best_case(customer_message)
 
-        if not semantic_matches:
-            st.info("No similar cases found.")
-        else:
-            match = semantic_matches[0]
-            case = match["case"]
-            score = match["score"]
-            
         st.subheader("Most relevant troubleshooting case")
 
         if not matches:
