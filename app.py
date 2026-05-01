@@ -370,6 +370,8 @@ if page == "📚 Manage knowledge base":
                 sep=";",
                 index=False
             )
+            load_cases.clear()
+            initialize_semantic_index.clear()
 
             st.success("New case added!")
 
