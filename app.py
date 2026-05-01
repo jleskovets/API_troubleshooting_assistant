@@ -289,11 +289,18 @@ if st.button("Analyze issue"):
                 with st.container(border=True):
                     st.markdown("### Email draft")
 
+                    email_text = reply_data["email_draft"]
+
                     st.text_area(
                         "Generated email",
-                        value=reply_data["email_draft"],
+                        value=email_text,
                         height=250,
                         label_visibility="collapsed"
+                    )
+
+                    st.button(
+                        "📋 Copy email draft",
+                        on_click=lambda: st.write("Copied!")
                     )
 
             except json.JSONDecodeError:
