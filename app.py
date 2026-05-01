@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
+from src.vector_store import build_vector_store, semantic_search
 
 
 # -----------------------------
@@ -54,7 +55,14 @@ customer_message = st.text_area(
     height=200,
     placeholder="Example: We receive 401 Invalid credentials when calling POST /auth/token..."
 )
+with st.sidebar:
+    st.header("Knowledge base")
 
+    if st.button("Rebuild semantic index"):
+        with st.spinner("Building semantic index..."):
+            count = build_vector_store()
+
+        st.success(f"Semantic index rebuilt. Cases indexed: {count}")
 
 # -----------------------------
 # Search logic
@@ -188,8 +196,15 @@ if st.button("Analyze issue"):
         st.warning("Please paste a customer message first.")
 
     else:
-        matches = simple_search(customer_message, cases)
+        semantic_matches = semantic_search(customer_message, top_k=1)
 
+        if not semantic_matches:
+            st.info("No similar cases found.")
+        else:
+            match = semantic_matches[0]
+            case = match["case"]
+            score = match["score"]
+            
         st.subheader("Most relevant troubleshooting case")
 
         if not matches:
