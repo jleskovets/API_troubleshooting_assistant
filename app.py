@@ -27,7 +27,7 @@ st.set_page_config(
 )
 
 st.title("🛠️ API Troubleshooting Assistant")
-st.write("Paste a customer API issue and get similar cases plus a draft reply.")
+st.write("Paste a customer API issue and get the most relevant troubleshooting case plus a draft reply.")
 
 
 # -----------------------------
@@ -61,36 +61,15 @@ customer_message = st.text_area(
 # -----------------------------
 
 def simple_search(message, df):
-
     message = message.lower()
-
     results = []
 
     for _, row in df.iterrows():
-
         score = 0
-
-        # ---- High-weight fields ----
 
         endpoint = str(row["endpoint"]).lower()
         error_code = str(row["error_code"]).lower()
-
-        if endpoint in message:
-            score += 5
-
-        if error_code in message:
-            score += 5
-
-        # ---- Medium-weight fields ----
-
         problem_text = str(row["problem"]).lower()
-
-        for word in message.split():
-
-            if word in problem_text:
-                score += 2
-
-        # ---- Low-weight fields ----
 
         full_text = " ".join([
             str(row["api_area"]),
@@ -98,23 +77,34 @@ def simple_search(message, df):
             str(row["solution"]),
         ]).lower()
 
-        for word in message.split():
+        # High-weight matches
+        if endpoint and endpoint in message:
+            score += 5
 
-            if word in full_text:
+        if error_code and error_code in message:
+            score += 5
+
+        # Medium-weight matches
+        for word in message.split():
+            clean_word = word.strip(".,!?;:()[]{}\"'").lower()
+
+            if len(clean_word) < 3:
+                continue
+
+            if clean_word in problem_text:
+                score += 2
+
+            if clean_word in full_text:
                 score += 1
 
         if score > 0:
             results.append((score, row))
-
-    # сортируем по релевантности
 
     results = sorted(
         results,
         key=lambda x: x[0],
         reverse=True
     )
-
-    # возвращаем только 1 лучший кейс
 
     return results[:1]
 
@@ -145,7 +135,7 @@ You are an API support assistant helping a system analyst respond to a customer.
 Customer message:
 {message}
 
-Similar troubleshooting cases:
+Most relevant troubleshooting case:
 {cases_text}
 
 Return ONLY raw valid JSON. Do not use markdown code fences.
@@ -200,43 +190,42 @@ if st.button("Analyze issue"):
     else:
         matches = simple_search(customer_message, cases)
 
-        st.subheader("Similar troubleshooting cases")
+        st.subheader("Most relevant troubleshooting case")
 
         if not matches:
             st.info("No similar cases found.")
 
         else:
-            for score, case = matches[0]
+            score, case = matches[0]
 
             with st.container(border=True):
+                st.markdown(
+                    f"### Case #{case['id']} — {case['api_area']}"
+                )
 
-            st.markdown(
-            f"### Case #{case['id']} — {case['api_area']}"
-        )
+                st.write(
+                    f"**Endpoint:** {case['endpoint']}"
+                )
 
-        st.write(
-            f"**Endpoint:** {case['endpoint']}"
-        )
+                st.write(
+                    f"**Error code:** {case['error_code']}"
+                )
 
-        st.write(
-            f"**Error code:** {case['error_code']}"
-        )
+                st.write(
+                    f"**Problem:** {case['problem']}"
+                )
 
-        st.write(
-            f"**Problem:** {case['problem']}"
-        )
+                st.write(
+                    f"**Possible root cause:** {case['root_cause']}"
+                )
 
-        st.write(
-            f"**Possible root cause:** {case['root_cause']}"
-        )
+                st.write(
+                    f"**Suggested solution:** {case['solution']}"
+                )
 
-        st.write(
-            f"**Suggested solution:** {case['solution']}"
-        )
-
-        st.caption(
-            f"Match score: {score}"
-        )
+                st.caption(
+                    f"Match score: {score}"
+                )
 
             st.subheader("AI-generated response")
 
