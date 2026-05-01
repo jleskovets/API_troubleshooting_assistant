@@ -61,29 +61,62 @@ customer_message = st.text_area(
 # -----------------------------
 
 def simple_search(message, df):
+
     message = message.lower()
+
     results = []
 
     for _, row in df.iterrows():
+
         score = 0
 
-        searchable_text = " ".join([
+        # ---- High-weight fields ----
+
+        endpoint = str(row["endpoint"]).lower()
+        error_code = str(row["error_code"]).lower()
+
+        if endpoint in message:
+            score += 5
+
+        if error_code in message:
+            score += 5
+
+        # ---- Medium-weight fields ----
+
+        problem_text = str(row["problem"]).lower()
+
+        for word in message.split():
+
+            if word in problem_text:
+                score += 2
+
+        # ---- Low-weight fields ----
+
+        full_text = " ".join([
             str(row["api_area"]),
-            str(row["endpoint"]),
-            str(row["error_code"]),
-            str(row["problem"]),
             str(row["root_cause"]),
             str(row["solution"]),
         ]).lower()
 
         for word in message.split():
-            if word in searchable_text:
+
+            if word in full_text:
                 score += 1
 
         if score > 0:
             results.append((score, row))
 
-    return sorted(results, key=lambda x: x[0], reverse=True)[:3]
+    # сортируем по релевантности
+
+    results = sorted(
+        results,
+        key=lambda x: x[0],
+        reverse=True
+    )
+
+    # возвращаем только 1 лучший кейс
+
+    return results[:1]
 
 
 # -----------------------------
@@ -173,35 +206,37 @@ if st.button("Analyze issue"):
             st.info("No similar cases found.")
 
         else:
-            for score, case in matches:
-                with st.container(border=True):
-                    st.markdown(
-                        f"### Case #{case['id']} — {case['api_area']}"
-                    )
+            for score, case = matches[0]
 
-                    st.write(
-                        f"**Endpoint:** {case['endpoint']}"
-                    )
+            with st.container(border=True):
 
-                    st.write(
-                        f"**Error code:** {case['error_code']}"
-                    )
+            st.markdown(
+            f"### Case #{case['id']} — {case['api_area']}"
+        )
 
-                    st.write(
-                        f"**Problem:** {case['problem']}"
-                    )
+        st.write(
+            f"**Endpoint:** {case['endpoint']}"
+        )
 
-                    st.write(
-                        f"**Possible root cause:** {case['root_cause']}"
-                    )
+        st.write(
+            f"**Error code:** {case['error_code']}"
+        )
 
-                    st.write(
-                        f"**Suggested solution:** {case['solution']}"
-                    )
+        st.write(
+            f"**Problem:** {case['problem']}"
+        )
 
-                    st.caption(
-                        f"Match score: {score}"
-                    )
+        st.write(
+            f"**Possible root cause:** {case['root_cause']}"
+        )
+
+        st.write(
+            f"**Suggested solution:** {case['solution']}"
+        )
+
+        st.caption(
+            f"Match score: {score}"
+        )
 
             st.subheader("AI-generated response")
 
