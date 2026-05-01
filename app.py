@@ -1,16 +1,14 @@
 import os
 import json
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from openai import OpenAI
+
 from src.vector_store import build_vector_store, semantic_search
 
-
-# -----------------------------
-# Setup
-# -----------------------------
 
 load_dotenv()
 
@@ -29,14 +27,8 @@ st.set_page_config(
 )
 
 st.title("🛠️ API Troubleshooting Assistant")
-st.write(
-    "Paste a customer API issue and get the most relevant troubleshooting case plus a draft reply."
-)
+st.write("Paste a customer API issue and get the most relevant troubleshooting case plus a draft reply.")
 
-
-# -----------------------------
-# Load data
-# -----------------------------
 
 @st.cache_data
 def load_cases():
@@ -46,12 +38,47 @@ def load_cases():
     )
 
 
+@st.cache_resource
+def initialize_semantic_index():
+    count = build_vector_store()
+    return count
+
+
+with st.spinner("Preparing semantic search index..."):
+    indexed_count = initialize_semantic_index()
+
+
 cases = load_cases()
 
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# -----------------------------
-# UI input
-# -----------------------------
+
+with st.sidebar:
+    st.header("Knowledge base")
+    st.success(f"Semantic index ready. Cases indexed: {indexed_count}")
+
+    st.header("Request history")
+
+    if not st.session_state.history:
+        st.caption("No requests yet.")
+    else:
+        for item in reversed(st.session_state.history):
+            with st.expander(item["title"]):
+                st.write("**Customer message:**")
+                st.write(item["customer_message"])
+
+                st.write("**Matched case:**")
+                st.write(item["matched_case"])
+
+                st.write("**Email draft:**")
+                st.write(item["email_draft"])
+
+    if st.session_state.history:
+        if st.button("Clear history"):
+            st.session_state.history = []
+            st.rerun()
+
 
 customer_message = st.text_area(
     "Customer message",
@@ -59,95 +86,12 @@ customer_message = st.text_area(
     placeholder="Example: We receive 401 Invalid credentials when calling POST /auth/token..."
 )
 
-with st.sidebar:
-    st.header("Knowledge base")
 
-    if st.button("Rebuild semantic index"):
-        with st.spinner("Building semantic index..."):
-            count = build_vector_store()
+def generate_customer_reply(message, match):
+    case = match["case"]
+    score = match["score"]
 
-        st.success(f"Semantic index rebuilt. Cases indexed: {count}")
-
-
-# -----------------------------
-# Fallback keyword search
-# -----------------------------
-
-# This is kept as a fallback in case the semantic index has not been built yet.
-def simple_search(message, df):
-    message = message.lower()
-    results = []
-
-    for _, row in df.iterrows():
-        score = 0
-
-        endpoint = str(row["endpoint"]).lower()
-        error_code = str(row["error_code"]).lower()
-        problem_text = str(row["problem"]).lower()
-
-        full_text = " ".join([
-            str(row["api_area"]),
-            str(row["root_cause"]),
-            str(row["solution"]),
-        ]).lower()
-
-        if endpoint and endpoint in message:
-            score += 5
-
-        if error_code and error_code in message:
-            score += 5
-
-        for word in message.split():
-            clean_word = word.strip(".,!?;:()[]{}\"'").lower()
-
-            if len(clean_word) < 3:
-                continue
-
-            if clean_word in problem_text:
-                score += 2
-
-            if clean_word in full_text:
-                score += 1
-
-        if score > 0:
-            results.append((score, row.to_dict()))
-
-    return sorted(results, key=lambda x: x[0], reverse=True)[:1]
-
-
-def find_best_case(message):
-    """
-    First tries semantic search.
-    If the semantic index is missing, falls back to keyword search.
-    Returns a list with one tuple: [(score, case_dict)].
-    """
-    try:
-        semantic_matches = semantic_search(message, top_k=1)
-
-        if semantic_matches:
-            match = semantic_matches[0]
-            return [(match["score"], match["case"])]
-
-    except Exception as error:
-        st.warning(
-            "Semantic index is not ready yet. "
-            "Click 'Rebuild semantic index' in the sidebar. "
-            "For now, keyword search will be used."
-        )
-        st.caption(f"Semantic search details: {error}")
-
-    return simple_search(message, cases)
-
-
-# -----------------------------
-# AI logic
-# -----------------------------
-
-def generate_customer_reply(message, matches):
-    cases_text = ""
-
-    for score, case in matches:
-        cases_text += f"""
+    cases_text = f"""
 Case ID: {case['id']}
 API Area: {case['api_area']}
 Endpoint: {case['endpoint']}
@@ -155,8 +99,7 @@ Error Code: {case['error_code']}
 Problem: {case['problem']}
 Possible Root Cause: {case['root_cause']}
 Suggested Solution: {case['solution']}
-Match Score: {score}
----
+Semantic Match Score: {score}
 """
 
     prompt = f"""
@@ -208,25 +151,23 @@ def parse_ai_json(reply):
     return json.loads(reply)
 
 
-# -----------------------------
-# Main button logic
-# -----------------------------
-
 if st.button("Analyze issue"):
 
     if not customer_message.strip():
         st.warning("Please paste a customer message first.")
 
     else:
-        matches = find_best_case(customer_message)
+        semantic_matches = semantic_search(customer_message, top_k=1)
 
         st.subheader("Most relevant troubleshooting case")
 
-        if not matches:
+        if not semantic_matches:
             st.info("No similar cases found.")
 
         else:
-            score, case = matches[0]
+            match = semantic_matches[0]
+            case = match["case"]
+            score = match["score"]
 
             with st.container(border=True):
                 st.markdown(
@@ -254,7 +195,7 @@ if st.button("Analyze issue"):
                 )
 
                 st.caption(
-                    f"Match score: {score}"
+                    f"Semantic match score: {score}"
                 )
 
             st.subheader("AI-generated response")
@@ -262,7 +203,7 @@ if st.button("Analyze issue"):
             with st.spinner("Generating customer reply..."):
                 reply = generate_customer_reply(
                     customer_message,
-                    matches
+                    match
                 )
 
             try:
@@ -289,19 +230,19 @@ if st.button("Analyze issue"):
                 with st.container(border=True):
                     st.markdown("### Email draft")
 
-                    email_text = reply_data["email_draft"]
-
                     st.text_area(
                         "Generated email",
-                        value=email_text,
+                        value=reply_data["email_draft"],
                         height=250,
                         label_visibility="collapsed"
                     )
 
-                    st.button(
-                        "📋 Copy email draft",
-                        on_click=lambda: st.write("Copied!")
-                    )
+                st.session_state.history.append({
+                    "title": f"{datetime.now().strftime('%H:%M')} — Case #{case['id']} / {case['api_area']}",
+                    "customer_message": customer_message,
+                    "matched_case": f"Case #{case['id']} — {case['problem']}",
+                    "email_draft": reply_data["email_draft"]
+                })
 
             except json.JSONDecodeError:
                 st.warning(
